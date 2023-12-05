@@ -7,21 +7,21 @@ using System.IO;
 public class PointCloudReader : MonoBehaviour
 {
     // Variables to hold file paths
-    public string filePath1;
-
+    public string filePath;
     // Prefab and materials for visualization
     public GameObject pointPrefab;
-    public Material materialSet1;
+    public Material materialSet;
 
-    public List<Vector3> pointsSet1 = new List<Vector3>();
+    public List<Vector3> pointsSet = new List<Vector3>();
 
-    void Awake()
+    public void Initialize()
     {
-        // Load and process each file
-        pointsSet1 = ReadPointsFromFile(filePath1);
+        pointsSet = ReadPointsFromFile(filePath);
+    }
 
-        // Visualize the points
-        VisualizePoints(pointsSet1, materialSet1);
+    public void VisualizePoints()
+    {
+        VisualizePoints(pointsSet, materialSet);
     }
 
     private List<Vector3> ReadPointsFromFile(string filePath)

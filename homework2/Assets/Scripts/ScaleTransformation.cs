@@ -1,80 +1,29 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using Accord.Math;
-using Accord.Math.Decompositions;
 using System.Linq;
-using Accord.MachineLearning;
-using Accord.Statistics;
-
-
+using Accord.Math;
 using Vector3 = UnityEngine.Vector3;
 using Matrix4x4 = UnityEngine.Matrix4x4;
 
-public class MyRigidTransformation : MonoBehaviour
+public class ScaleTransformation : MonoBehaviour
 {
-    public List<Vector3> pointsSet1 = new List<Vector3>();
-    public List<Vector3> pointsSet2 = new List<Vector3>();
-    public GameObject PointCloud1;
-    public GameObject PointCloud2;
+    private List<Vector3> pointsSet1;
+    private List<Vector3> pointsSet2;
     public GameObject pointPrefab;
     public GameObject linePrefab;
     public Material materialSet1;
-    // Start is called before the first frame update
-    void Start()
+
+    public void Driver()
     {
-        Debug.Log("Transform script started");
-        Initialize();
-        List<Vector3> pointsSet3 = new List<Vector3>();
-        pointsSet3 = AlignPoints(pointsSet1, pointsSet2);
+        List<Vector3> pointsSet3 = AlignAndScalePoints(pointsSet1, pointsSet2);
         VisualizePoints(pointsSet3, materialSet1);
         DrawMovementLines(pointsSet2, pointsSet3);
-        Debug.Log("Transform script ended");
     }
 
-    // Update is called once per frame
-    void Update()
+    public void SetPoints(List<Vector3> newPointsSet1, List<Vector3> newPointsSet2)
     {
-        
-    }
-
-    void Initialize(){
-        pointsSet1 = PointCloud1.GetComponent<PointCloudReader>().pointsSet1;
-        pointsSet2 = PointCloud2.GetComponent<PointCloudReader>().pointsSet1;
-    }
-
-    private List<Vector3> MyRigidTransform(){
-        Quaternion rotation = Quaternion.Euler(0, 0, 0); // rotation
-        Vector3 translation = new Vector3(5, 0, 0); // translation
-        Matrix4x4 rigidTransform = Matrix4x4.TRS(translation, rotation, Vector3.one);
-        List<Vector3> transformedPointsSet1 = new List<Vector3>();
-
-        foreach (Vector3 point in pointsSet2)
-        {
-            Vector3 transformedPoint = rigidTransform.MultiplyPoint3x4(point);
-            transformedPointsSet1.Add(transformedPoint);
-        }
-        // Assign the transformed points to pointsSet2
-        return transformedPointsSet1;
-    }
-
-    private List<Vector3> MyRigidTransform(Vector3 scale){
-        Quaternion rotation = Quaternion.Euler(0, 0, 0); // rotation
-        Vector3 translation = new Vector3(5, 0, 0); // translation
-        
-        // Apply the scale along with the rotation and translation
-        Matrix4x4 rigidTransform = Matrix4x4.TRS(translation, rotation, scale);
-
-        List<Vector3> transformedPointsSet1 = new List<Vector3>();
-
-        foreach (Vector3 point in pointsSet1)
-        {
-            Vector3 transformedPoint = rigidTransform.MultiplyPoint3x4(point);
-            transformedPointsSet1.Add(transformedPoint);
-        }
-
-        // Assign the transformed points to pointsSet2
-        return transformedPointsSet1;
+        pointsSet1 = newPointsSet1;
+        pointsSet2 = newPointsSet2;
     }
 
     private void VisualizePoints(List<Vector3> points, Material material)
@@ -96,7 +45,6 @@ public class MyRigidTransformation : MonoBehaviour
     private void DrawMovementLines(List<Vector3> originalPoints, List<Vector3> transformedPoints)
     {
         int minCount = Mathf.Min(originalPoints.Count, transformedPoints.Count);
-
         for (int i = 0; i < minCount; i++)
         {
             Vector3 start = originalPoints[i];
@@ -112,7 +60,7 @@ public class MyRigidTransformation : MonoBehaviour
         }
     }
 
-    private List<Vector3> AlignPoints(List<Vector3> sourcePoints, List<Vector3> targetPoints)
+    private List<Vector3> AlignAndScalePoints(List<Vector3> sourcePoints, List<Vector3> targetPoints)
     {
         int minCount = Mathf.Min(sourcePoints.Count, targetPoints.Count);
 
@@ -129,20 +77,24 @@ public class MyRigidTransformation : MonoBehaviour
         // Center the points around the centroids
         List<Vector3> centeredSource = CenterPoints(sourcePoints.GetRange(0, minCount), centroidSource);
         List<Vector3> centeredTarget = CenterPoints(targetPoints.GetRange(0, minCount), centroidTarget);
-
+        
         // Compute the rotation matrix using Kabsch algorithm
         Quaternion rotation = ComputeKabschRotation(centeredSource, centeredTarget);
+        
+        // Compute scale factor
+        float scaleFactor = ComputeScaleFactor(sourcePoints, targetPoints);
 
-        // Apply the rotation and translation to the smaller set of points
-        List<Vector3> alignedPoints = new List<Vector3>();
+        // Apply the rotation, scaling, and translation
+        List<Vector3> transformedPoints = new List<Vector3>();
         for (int i = 0; i < minCount; i++)
         {
             Vector3 point = sourcePoints[i];
             Vector3 rotatedPoint = rotation * (point - centroidSource);
-            alignedPoints.Add(rotatedPoint + centroidTarget);
+            Vector3 scaledAndTranslatedPoint = (rotatedPoint * scaleFactor) + centroidTarget;
+            transformedPoints.Add(scaledAndTranslatedPoint);
         }
 
-        return alignedPoints;
+        return transformedPoints;
     }
 
     private Vector3 ComputeCentroid(List<Vector3> points)
@@ -154,6 +106,32 @@ public class MyRigidTransformation : MonoBehaviour
         }
         return sum / points.Count;
     }
+
+    private float ComputeScaleFactor(List<Vector3> sourcePoints, List<Vector3> targetPoints)
+    {
+        int minCount = Mathf.Min(sourcePoints.Count, targetPoints.Count);
+        float totalScaleFactor = 0f;
+        int validCount = 0; // Count of valid divisions
+
+        for (int i = 0; i < minCount; i++)
+        {
+            float sourceMagnitude = sourcePoints[i].magnitude;
+            
+            // Check if sourceMagnitude is very small (close to zero) to avoid division by zero
+            if (Mathf.Approximately(sourceMagnitude, 0f))
+            {
+                continue;
+            }
+
+            float targetMagnitude = targetPoints[i].magnitude;
+            totalScaleFactor += targetMagnitude / sourceMagnitude;
+            validCount++;
+        }
+
+        // Avoid division by zero if validCount is zero
+        return validCount > 0 ? totalScaleFactor / validCount : 1f; // Default scale factor of 1 if no valid divisions
+    }
+
 
     private List<Vector3> CenterPoints(List<Vector3> points, Vector3 centroid)
     {
@@ -202,8 +180,6 @@ public class MyRigidTransformation : MonoBehaviour
     private Quaternion QuaternionFromMatrix(Matrix4x4 m)
     {
         // Convert a rotation matrix to a quaternion
-        // This is a simplified method and may not handle all cases
         return Quaternion.LookRotation(m.GetColumn(2), m.GetColumn(1));
     }
-
 }
